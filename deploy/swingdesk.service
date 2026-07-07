@@ -1,0 +1,16 @@
+# /etc/systemd/system/swingdesk.service
+[Unit]
+Description=EB Swing Desk backend (FastAPI)
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=swingdesk
+WorkingDirectory=/opt/swingdesk/backend
+EnvironmentFile=/opt/swingdesk/backend/.env
+ExecStart=/opt/swingdesk/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

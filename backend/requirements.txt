@@ -1,0 +1,17 @@
+fastapi>=0.111
+uvicorn[standard]>=0.30
+sqlalchemy>=2.0
+psycopg2-binary>=2.9
+pydantic>=2.7
+pydantic-settings>=2.3
+pandas>=2.2
+numpy>=1.26
+anthropic>=0.40
+apscheduler>=3.10
+httpx>=0.27
+python-dotenv>=1.0
+pyotp>=2.9
+# Broker SDKs (optional — the app runs with the mock adapter without them)
+# smartapi-python>=1.4      # Angel One SmartAPI
+# kiteconnect>=5.0          # Zerodha Kite Connect
+pytest>=8.0

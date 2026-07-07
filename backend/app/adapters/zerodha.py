@@ -137,3 +137,50 @@ class ZerodhaAdapter(BrokerAdapter):
 
     def get_instruments(self) -> list[Instrument]:
         return list(self._instruments.values())
+
+    # --- Options (NFO) --------------------------------------------------------
+    def _nfo_options(self, underlying: str) -> list[dict]:
+        """Cached NFO option instrument rows for the underlying index."""
+        if not getattr(self, "_nfo_cache", None):
+            kite = self._client()
+            if not self._access_token:
+                raise BrokerError("Zerodha not authenticated")
+            try:
+                self._nfo_cache = kite.instruments("NFO")
+            except Exception as e:
+                raise BrokerError(f"Kite NFO instruments fetch failed: {e}") from e
+        name = underlying.replace(" 50", "").strip()  # "NIFTY 50" → "NIFTY"
+        return [r for r in self._nfo_cache
+                if r.get("name") == name and r.get("instrument_type") in ("CE", "PE")]
+
+    def get_option_expiries(self, underlying: str):
+        from datetime import date as _date
+
+        rows = self._nfo_options(underlying)
+        today = _date.today()
+        exps = sorted({r["expiry"].date() if hasattr(r["expiry"], "date") else r["expiry"]
+                       for r in rows})
+        return [e for e in exps if e >= today][:6]
+
+    def get_option_quotes(self, underlying, expiry, items):
+        kite = self._client()
+        rows = self._nfo_options(underlying)
+        want = {(int(strike), t) for strike, t in items}
+        keymap: dict[str, str] = {}  # "NFO:tradingsymbol" -> "24500PE"
+        for r in rows:
+            exp = r["expiry"].date() if hasattr(r["expiry"], "date") else r["expiry"]
+            if exp != expiry:
+                continue
+            k = (int(float(r["strike"])), r["instrument_type"])
+            if k in want:
+                keymap[f"NFO:{r['tradingsymbol']}"] = f"{k[0]}{k[1]}"
+        out: dict[str, float] = {}
+        keys = list(keymap.keys())
+        for i in range(0, len(keys), 400):
+            try:
+                data = kite.ltp(keys[i:i + 400])
+                for full, v in data.items():
+                    out[keymap[full]] = float(v["last_price"])
+            except Exception as e:
+                log.warning("Kite option LTP batch failed: %s", e)
+        return out

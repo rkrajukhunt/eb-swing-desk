@@ -110,6 +110,40 @@ class MockAdapter(BrokerAdapter):
     def get_instruments(self) -> list[Instrument]:
         return [Instrument(symbol=s) for s in get_universe_symbols("NIFTY500")]
 
+    # --- Options: synthetic Black-Scholes chain over the mock spot -----------
+    def _mock_iv(self, spot: float, strike: int, opt_type: str) -> float:
+        """Deterministic vol smile: ~13% ATM, rising in the wings, put skew,
+        plus a small time-of-day wiggle so paper MTM moves between polls."""
+        moneyness = abs(strike - spot) / spot
+        iv = 0.13 + 0.55 * moneyness
+        if opt_type == "PE" and strike < spot:
+            iv += 0.015  # index put skew
+        t = datetime.now()
+        iv += 0.004 * math.sin(t.minute * 6.28 / 60 + strike % 7)
+        return max(iv, 0.08)
+
+    def get_option_expiries(self, underlying: str):
+        from ..options.expiries import next_weekly_expiries
+        from ..services.settings_store import get_settings
+
+        return next_weekly_expiries(int(get_settings()["options"]["expiry_weekday"]))
+
+    def get_option_quotes(self, underlying, expiry, items):
+        from ..options.expiries import dte_calendar_days
+        from ..options.pricing import bs_price
+        from ..services.settings_store import get_settings
+
+        opt = get_settings()["options"]
+        spot = self.get_ltp([underlying])[underlying]
+        t = max(dte_calendar_days(expiry), 0.02) / 365.0
+        r = float(opt["risk_free_rate_pct"]) / 100.0
+        out: dict[str, float] = {}
+        for strike, opt_type in items:
+            iv = self._mock_iv(spot, strike, opt_type)
+            price = bs_price(spot, float(strike), t, iv, r, opt_type)
+            out[f"{strike}{opt_type}"] = round(max(price, 0.05), 2)
+        return out
+
 
 def _resample_weekly(daily: list[Candle]) -> list[Candle]:
     weeks: dict[tuple, list[Candle]] = {}

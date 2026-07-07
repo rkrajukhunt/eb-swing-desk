@@ -111,6 +111,70 @@ class PaperTrade(Base):
     holding_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
+class OptionSignal(Base):
+    """A generated option-selling recommendation (deterministic, auditable)."""
+
+    __tablename__ = "option_signals"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    underlying: Mapped[str] = mapped_column(String(16), default="NIFTY 50")
+    expiry: Mapped[str] = mapped_column(String(10))          # ISO date
+    dte: Mapped[float] = mapped_column(Float)
+    spot: Mapped[float] = mapped_column(Float)
+    regime: Mapped[str] = mapped_column(String(16))
+    strategy: Mapped[str] = mapped_column(String(24))
+    entry_ok: Mapped[bool] = mapped_column(Boolean, default=True)
+    entry_block_reason: Mapped[str] = mapped_column(String(256), default="")
+    atm_iv_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    expected_move: Mapped[float | None] = mapped_column(Float, nullable=True)
+    legs: Mapped[list] = mapped_column(JSON, default=list)   # [{side,opt_type,strike,price,delta,iv_pct}]
+    credit: Mapped[float | None] = mapped_column(Float, nullable=True)      # pts/share
+    max_profit: Mapped[float | None] = mapped_column(Float, nullable=True)  # pts/share
+    max_loss: Mapped[float | None] = mapped_column(Float, nullable=True)
+    margin_per_lot: Mapped[float | None] = mapped_column(Float, nullable=True)
+    roc_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    pop_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    breakevens: Mapped[list] = mapped_column(JSON, default=list)
+    lots_suggested: Mapped[int] = mapped_column(Integer, default=0)
+    target_met: Mapped[bool] = mapped_column(Boolean, default=False)
+    reasons: Mapped[list] = mapped_column(JSON, default=list)
+    chain_snapshot: Mapped[list] = mapped_column(JSON, default=list)  # strikes near ATM for UI
+
+
+class OptionTrade(Base):
+    """Multi-leg paper option position (short premium, defined risk)."""
+
+    __tablename__ = "option_trades"
+    __table_args__ = (Index("ix_opt_trade_status", "status"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    signal_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    underlying: Mapped[str] = mapped_column(String(16), default="NIFTY 50")
+    strategy: Mapped[str] = mapped_column(String(24))
+    expiry: Mapped[str] = mapped_column(String(10))
+    lots: Mapped[int] = mapped_column(Integer)
+    lot_size: Mapped[int] = mapped_column(Integer)
+    legs: Mapped[list] = mapped_column(JSON, default=list)   # [{side,opt_type,strike,entry_price}]
+    net_credit: Mapped[float] = mapped_column(Float)          # pts/share at live entry quotes
+    max_loss: Mapped[float] = mapped_column(Float)            # pts/share
+    margin_est: Mapped[float] = mapped_column(Float)          # ₹ total
+    breakevens: Mapped[list] = mapped_column(JSON, default=list)
+    short_strikes: Mapped[dict] = mapped_column(JSON, default=dict)  # {"PE": 24400, "CE": 25200}
+    status: Mapped[str] = mapped_column(String(8), default="open")
+    entry_time: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    spot_entry: Mapped[float] = mapped_column(Float, default=0.0)
+    exit_time: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    exit_debit: Mapped[float | None] = mapped_column(Float, nullable=True)  # pts/share to close
+    exit_reason: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    # Profit Target | Stop Loss | Strike Breach | Expiry Settlement | Manual Exit
+    spot_exit: Mapped[float | None] = mapped_column(Float, nullable=True)
+    costs: Mapped[float] = mapped_column(Float, default=0.0)
+    pnl: Mapped[float | None] = mapped_column(Float, nullable=True)         # ₹ net of costs
+    return_on_margin_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    broker_source: Mapped[str] = mapped_column(String(16), default="mock")
+
+
 class WatchlistItem(Base):
     __tablename__ = "watchlist"
     __table_args__ = (UniqueConstraint("symbol", name="uq_watch_symbol"),)

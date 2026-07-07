@@ -19,6 +19,10 @@ carries a full formula audit trail (hover the strategy badge and score in the UI
 ```
 backend/app/
   adapters/    BrokerAdapter ABC + AngelOne (SmartAPI/TOTP), Zerodha (Kite request-token), Mock
+               (equity LTP/OHLC + weekly option-chain quotes on all three)
+  options/     NIFTY weekly option-selling module — fully separate from the swing engine:
+               Black-Scholes pricing/IV/POP, expiry calendar, defined-risk structure
+               builder, signal engine, multi-leg paper engine with live MTM
   engine/      indicators (EMA/RSI/MACD/ADX/ATR/BB/divergence/RS), regime filter,
                liquidity guards, config-driven strategies, signal math, composite scoring, scanner
   llm/         Claude ranking layer with strict JSON contract + backend validation firewall
@@ -50,6 +54,47 @@ deploy/        nginx + systemd units for a single Ubuntu server behind Cloudflar
 7. **Backtest == live** — the backtester iterates the *same* `evaluate_strategies` +
    `build_levels` + `apply_costs` functions bar-by-bar (next-open entries, stop-first fills,
    brokerage + slippage), so backtest results validate exactly the code that produces live signals.
+
+## Option selling module (NIFTY weekly income)
+
+Separate engine (`backend/app/options/`, Options tab in the UI) targeting a
+configurable **2–3% weekly return on margin** by selling NIFTY weekly premium with
+**defined risk only** — every short leg is hedged by a bought leg, so max loss is
+capped by construction (naked writing is deliberately not offered).
+
+**The algo — when to sell:** entry only when days-to-expiry is inside the configured
+window (default 1–7, i.e. the current weekly cycle), ATM implied vol is above the
+floor (default 9% — no point selling thin premium), and a compliant structure exists.
+Blocked entries are shown with the exact reason ("DTE 0.3 outside window", "IV 7.8%
+< floor", …) instead of a forced trade.
+
+**What to sell / what to buy:** the shared NIFTY regime module picks the structure —
+bullish → **bull put spread**, bearish → **bear call spread**, neutral → **iron condor**.
+Short strikes start beyond `em_multiplier` × the market-implied expected move (ATM
+straddle price), then tighten step-by-step until return-on-margin meets the weekly
+target — hard-bounded by a short-delta cap (default 0.35) and an EM floor. If the
+target is unreachable inside those bounds the best compliant structure is returned
+flagged "below target" — the algo never silently adds risk to chase yield. Hedge
+legs are bought `wing_width_points` (default 200) further OTM.
+
+**All numbers are Black-Scholes math from live quotes:** IV solved from each leg's
+LTP, deltas, expected move, probability of profit, breakevens, credit, max loss,
+margin ≈ max loss × lot size, ROC = credit/margin. Every recommendation carries its
+formula audit (including the strike search trace) plus a chain snapshot.
+
+**Options paper trading (live data):** "Paper Sell" fills every leg at its live quote
+at click time; open positions poll live leg LTPs for MTM. The server-side auto-exit
+engine closes at profit target (default 60% of max), stop loss (default 2× credit),
+short-strike breach, or expiry settlement at intrinsic value. Costs = per-leg
+brokerage + premium slippage on both sides. Performance is bucketed by ISO week as
+return-on-margin vs the target.
+
+**Honesty note:** a 2–3%/week short-premium target implies meaningful tail risk. Max
+loss per structure is capped by the hedges, but weeks where the index moves beyond
+the expected move will produce losses larger than several weeks of gains — that is
+the nature of the strategy, and exactly what the paper module exists to measure
+before any real money is involved. Verify `lot_size` (default 75) and
+`expiry_weekday` (default Tuesday) against current exchange specs in Settings.
 
 ## Quick start (dev, zero credentials)
 

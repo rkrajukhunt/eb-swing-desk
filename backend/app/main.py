@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .adapters.factory import active_adapter
-from .api import routes_misc, routes_paper, routes_scan
+from .api import routes_misc, routes_options, routes_paper, routes_scan
 from .config import env
 from .database import init_db
 from .engine.scanner import run_scan
@@ -67,4 +67,5 @@ app.add_middleware(
 
 app.include_router(routes_scan.router)
 app.include_router(routes_paper.router)
+app.include_router(routes_options.router)
 app.include_router(routes_misc.router)

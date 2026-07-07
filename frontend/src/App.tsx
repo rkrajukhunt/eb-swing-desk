@@ -3,13 +3,14 @@ import { api } from "./api";
 import type { BrokerStatus, ScanLatest } from "./types";
 import Backtest from "./components/Backtest";
 import ClosedTrades from "./components/ClosedTrades";
+import Options from "./components/Options";
 import Performance from "./components/Performance";
 import Positions from "./components/Positions";
 import Settings from "./components/Settings";
 import Signals from "./components/Signals";
 import Watchlist from "./components/Watchlist";
 
-const TABS = ["Signals", "Open Positions", "Closed Trades", "Performance", "Backtest", "Watchlist", "Settings"] as const;
+const TABS = ["Signals", "Options", "Open Positions", "Closed Trades", "Performance", "Backtest", "Watchlist", "Settings"] as const;
 type Tab = (typeof TABS)[number];
 
 interface RegimeInfo {
@@ -103,6 +104,7 @@ export default function App() {
         {tab === "Signals" && (
           <Signals scan={scan} scanning={scanning} onRunScan={runScan} onReload={loadScan} />
         )}
+        {tab === "Options" && <Options />}
         {tab === "Open Positions" && <Positions />}
         {tab === "Closed Trades" && <ClosedTrades />}
         {tab === "Performance" && <Performance />}

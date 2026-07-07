@@ -143,3 +143,69 @@ class AngelOneAdapter(BrokerAdapter):
 
     def get_instruments(self) -> list[Instrument]:
         return list(self._instruments.values())
+
+    # --- Options (NFO) --------------------------------------------------------
+    def _nfo_options(self, underlying: str) -> list[dict]:
+        """Cached NFO option rows from the scrip master for the underlying.
+        Angel publishes strike in paise (strike*100) and expiry as DDMMMYYYY."""
+        if not getattr(self, "_nfo_cache", None):
+            import httpx
+
+            url = "https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json"
+            try:
+                rows = httpx.get(url, timeout=60).json()
+            except Exception as e:
+                raise BrokerError(f"Angel scrip master fetch failed: {e}") from e
+            name = underlying.replace(" 50", "").strip()
+            self._nfo_cache = [
+                r for r in rows
+                if r.get("exch_seg") == "NFO" and r.get("name") == name
+                and r.get("instrumenttype") == "OPTIDX"
+            ]
+        return self._nfo_cache
+
+    @staticmethod
+    def _parse_expiry(s: str):
+        from datetime import datetime as _dt
+
+        for fmt in ("%d%b%Y", "%d%b%y"):
+            try:
+                return _dt.strptime(s.strip().upper(), fmt).date()
+            except ValueError:
+                continue
+        return None
+
+    def get_option_expiries(self, underlying: str):
+        from datetime import date as _date
+
+        today = _date.today()
+        exps = sorted({e for r in self._nfo_options(underlying)
+                       if (e := self._parse_expiry(r.get("expiry", ""))) is not None})
+        return [e for e in exps if e >= today][:6]
+
+    def get_option_quotes(self, underlying, expiry, items):
+        smart = self._require_auth()
+        want = {(int(strike), t) for strike, t in items}
+        tokenmap: dict[str, str] = {}  # token -> "24500PE"
+        for r in self._nfo_options(underlying):
+            if self._parse_expiry(r.get("expiry", "")) != expiry:
+                continue
+            try:
+                strike = int(round(float(r.get("strike", 0)) / 100.0))
+            except (TypeError, ValueError):
+                continue
+            opt_type = "CE" if r.get("symbol", "").endswith("CE") else "PE"
+            if (strike, opt_type) in want:
+                tokenmap[str(r["token"])] = f"{strike}{opt_type}"
+        out: dict[str, float] = {}
+        tokens = list(tokenmap.keys())
+        for i in range(0, len(tokens), 50):  # SmartAPI market-data batch limit
+            try:
+                resp = smart.getMarketData("LTP", {"NFO": tokens[i:i + 50]})
+                for row in (resp.get("data", {}) or {}).get("fetched", []):
+                    key = tokenmap.get(str(row.get("symbolToken")))
+                    if key:
+                        out[key] = float(row.get("ltp"))
+            except Exception as e:
+                log.warning("Angel option LTP batch failed: %s", e)
+        return out

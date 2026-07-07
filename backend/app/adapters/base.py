@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime
 
 
 @dataclass
@@ -66,3 +66,17 @@ class BrokerAdapter(ABC):
     @abstractmethod
     def get_instruments(self) -> list[Instrument]:
         """Tradable instrument master (used to validate the universe)."""
+
+    # --- Options (weekly index option selling) -------------------------------
+    # Quote keys are f"{strike}{opt_type}" e.g. "24500PE".
+
+    def get_option_expiries(self, underlying: str) -> list["date"]:
+        """Upcoming expiry dates for the underlying's options, ascending."""
+        raise BrokerError(f"{self.name}: options data not supported")
+
+    def get_option_quotes(
+        self, underlying: str, expiry: "date", items: list[tuple[int, str]]
+    ) -> dict[str, float]:
+        """Batched option LTPs for (strike, 'CE'|'PE') pairs on one expiry.
+        Missing/illiquid contracts are omitted from the result."""
+        raise BrokerError(f"{self.name}: options data not supported")

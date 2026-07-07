@@ -205,6 +205,9 @@ async def auto_exit_loop() -> None:
             # Mock broker trades any time (dev); real brokers only in market hours
             if settings["active_broker"] == "mock" or is_market_open():
                 await asyncio.to_thread(check_exits_once)
+                from ..options import paper as options_paper
+
+                await asyncio.to_thread(options_paper.check_exits_once)
         except Exception:
             log.exception("auto-exit pass failed")
         try:

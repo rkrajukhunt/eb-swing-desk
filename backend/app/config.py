@@ -72,6 +72,34 @@ DEFAULT_SETTINGS: dict = {
     # --- Backtest ---
     "backtest_years": 3,
     "backtest_max_holding_days": 40,
+    # --- Option selling (NIFTY weekly income module — separate from swing) ---
+    "options": {
+        "enabled": True,
+        "underlying": "NIFTY 50",
+        "lot_size": 75,                    # NIFTY lot size (verify with your broker)
+        "strike_step": 50,
+        "expiry_weekday": 1,               # 0=Mon … 6=Sun. NIFTY weekly expiry = Tuesday
+        "risk_free_rate_pct": 6.5,         # for Black-Scholes
+        "capital_allocation_pct": 60.0,    # % of capital deployable as option margin
+        # Entry timing (the "when to sell")
+        "entry_dte_min": 1,                # don't open with <1 day left
+        "entry_dte_max": 7,                # sell the current weekly cycle only
+        "min_iv_pct": 9.0,                 # skip selling when implied vol is too thin
+        # Strike selection (the "what to sell / what to buy as hedge")
+        "em_multiplier": 1.1,              # start short strikes beyond 1.1× expected move
+        "em_multiplier_floor": 0.5,        # never tighter than 0.5× EM
+        "max_short_delta": 0.35,           # hard cap on short-strike delta
+        "wing_width_points": 200,          # hedge (bought) leg distance
+        "weekly_roc_target_pct": 2.0,      # tighten strikes until ROC ≥ this (bounded)
+        "min_credit_points": 8.0,          # reject dust credits
+        # Exits (auto-managed by the paper engine)
+        "profit_take_pct_of_max": 60.0,    # close at 60% of max profit captured
+        "stop_loss_mult_of_credit": 2.0,   # close when loss = 2× credit received
+        "exit_on_short_strike_breach": True,
+        # Costs
+        "brokerage_per_leg": 20.0,         # per leg per side (₹)
+        "slippage_pct_premium": 1.0,       # % of each leg's premium, adverse, both sides
+    },
     # --- Strategy presets (config-driven; tune without code edits) ---
     "strategies": {
         "trend_pullback": {

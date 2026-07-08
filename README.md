@@ -136,11 +136,25 @@ per-symbol errors degrade gracefully — they never crash a scan.
 
 ## LLM layer (optional)
 
-Set `ANTHROPIC_API_KEY` in `.env`. The top-20 candidates (all numbers pre-computed) go to
-Claude (`claude-sonnet-4-6`, temperature 0.2, strict JSON). The backend then: retries once on
-parse failure and falls back to deterministic ordering; asserts every echoed price equals the
-engine value (else discards + logs tampering); drops hallucinated symbols; re-appends dropped
-candidates; sanitizes rationale text. Displayed prices **always** come from the engine.
+Two providers, each through its **own official SDK** — no `base_url` shims. Pick one in
+Settings → *LLM re-ranking*; it reads that provider's key from `.env`.
+
+| Provider | SDK | Key (`.env`) | Model id |
+|---|---|---|---|
+| `anthropic` | `anthropic` | `ANTHROPIC_API_KEY` (`sk-ant-…`) | `claude-sonnet-4-6` |
+| `openrouter` | `openrouter` | `OPENROUTER_API_KEY` (`sk-or-v1-…`) | `anthropic/claude-sonnet-4.6` |
+
+Both adapters live in `llm/providers.py` and normalise to one `Completion`, so `ranker.py`
+never branches on provider. Model ids are **not** portable — Anthropic uses bare dashed ids,
+OpenRouter namespaced dotted ones. `POST /api/llm/test` round-trips the configured provider
+(and pre-checks the key prefix + model dialect) so a misconfiguration surfaces immediately
+instead of silently degrading to deterministic ordering.
+
+The top-N candidates (all numbers pre-computed) go to Claude (temperature 0.2, strict JSON;
+`max_tokens` scales with candidate count). The backend then: retries once on parse failure and
+falls back to deterministic ordering; asserts every echoed price equals the engine value (else
+discards + logs tampering); drops hallucinated symbols; re-appends dropped candidates;
+sanitizes rationale text. Displayed prices **always** come from the engine.
 
 ## Universe
 

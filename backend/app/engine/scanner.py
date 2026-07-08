@@ -19,7 +19,7 @@ from .liquidity import liquidity_check
 from .regime import Regime, classify_regime
 from .scoring import score_candidate
 from .signals import build_levels
-from .strategies import STRATEGY_LABELS, evaluate_strategies
+from .strategies import evaluate_strategies
 
 log = logging.getLogger(__name__)
 

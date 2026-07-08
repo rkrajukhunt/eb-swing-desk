@@ -17,12 +17,13 @@ import re
 
 from sqlalchemy import select
 
-from ..config import DISCLAIMER, env
+from ..config import DISCLAIMER
 from ..database import db_session
 from ..engine.regime import Regime
 from ..engine.strategies import STRATEGY_LABELS
 from ..models import ScanRun, Signal
 from ..services.settings_store import get_settings
+from . import providers
 
 log = logging.getLogger(__name__)
 
@@ -106,22 +107,45 @@ def build_payload(signals: list[Signal], regime: Regime, max_candidates: int) ->
     }
 
 
-def _call_claude(payload: dict, model: str) -> str:
-    import anthropic
+def test_connection() -> dict:
+    """Round-trip the configured provider so a bad key/model surfaces in the UI.
+    The scan path swallows LLM errors by design, so this is the only signal."""
+    return providers.test_connection(get_settings())
 
-    client = anthropic.Anthropic(api_key=env.anthropic_api_key, timeout=60.0, max_retries=1)
-    # max_tokens sized for ~20 candidates × ~120 tokens each + overhead
-    response = client.messages.create(
-        model=model,
-        max_tokens=4096,
-        temperature=0.2,
-        system=SYSTEM_PROMPT,
-        messages=[{
-            "role": "user",
-            "content": OUTPUT_SCHEMA_HINT + "\n\nINPUT:\n" + json.dumps(payload, separators=(",", ":")),
-        }],
-    )
-    return next(b.text for b in response.content if b.type == "text")
+
+# A ranked entry costs ~350 output tokens (rationale + conflicts + regime_note).
+# Reserve 400 each so a verbose reply is never truncated mid-object — a truncated
+# reply is unparseable JSON, which silently degrades to deterministic ordering.
+TOKENS_PER_CANDIDATE = 400
+TOKENS_OVERHEAD = 512
+MAX_TOKENS_CEILING = 16_384      # must exceed 512 + 400 × llm_max_candidates
+# Below this, the reply cannot possibly hold `n` complete objects — retrying at a
+# smaller budget would only buy a truncated (and billed) response.
+MIN_TOKENS_PER_CANDIDATE = 300
+
+
+def budget_for(n_candidates: int) -> int:
+    return min(MAX_TOKENS_CEILING, TOKENS_OVERHEAD + TOKENS_PER_CANDIDATE * max(n_candidates, 1))
+
+
+def _call_claude(payload: dict, model: str) -> str:
+    n = len(payload.get("candidates", []))
+    max_tokens = budget_for(n)
+    user = OUTPUT_SCHEMA_HINT + "\n\nINPUT:\n" + json.dumps(payload, separators=(",", ":"))
+    settings = get_settings()
+
+    try:
+        return providers.complete(settings, SYSTEM_PROMPT, user, max_tokens).text
+    except providers.LLMBudgetError as e:
+        # `max_tokens` is a reservation, not a bill. A credit-capped account can
+        # reject 1312 while the reply only needs ~700 — retry at the ceiling it
+        # named, but only if that still fits `n` complete objects.
+        floor = MIN_TOKENS_PER_CANDIDATE * max(n, 1)
+        if not e.affordable or e.affordable < floor:
+            raise
+        log.warning("LLM budget capped at %d tokens (wanted %d) — retrying at the cap",
+                    e.affordable, max_tokens)
+        return providers.complete(settings, SYSTEM_PROMPT, user, e.affordable).text
 
 
 def _parse_json(text: str) -> dict | None:
@@ -197,8 +221,9 @@ def validate_and_apply(data: dict, signals: list[Signal], max_candidates: int) -
 
 def rank_with_claude(scan_run_id: int, regime: Regime) -> None:
     settings = get_settings()
-    if not env.anthropic_api_key:
-        log.info("ANTHROPIC_API_KEY not set — skipping LLM ranking")
+    problem = providers.preflight(settings)
+    if problem:
+        log.info("LLM ranking skipped — %s", problem)
         return
 
     with db_session() as s:
@@ -215,6 +240,17 @@ def rank_with_claude(scan_run_id: int, regime: Regime) -> None:
         for attempt in (1, 2):  # parse failure → retry once
             try:
                 raw = _call_claude(payload, settings["llm_model"])
+            except providers.LLMBudgetError as e:
+                # _call_claude already retried at the provider's ceiling if that was
+                # workable. Retrying the whole call cannot help — the balance is the
+                # constraint, not the request. Stop instead of burning a second 402.
+                log.warning(
+                    "LLM ranking unavailable — insufficient credits for %d candidates "
+                    "(provider allows %s tokens, need ~%d). Add credits or lower "
+                    "llm_max_candidates. Falling back to composite_score order.",
+                    len(payload["candidates"]), e.affordable or "?",
+                    MIN_TOKENS_PER_CANDIDATE * len(payload["candidates"]))
+                return
             except Exception as e:
                 log.warning("Claude call failed (attempt %d): %s", attempt, e)
                 continue
@@ -234,4 +270,5 @@ def rank_with_claude(scan_run_id: int, regime: Regime) -> None:
         run.llm_used = True
 
 
-__all__ = ["rank_with_claude", "validate_and_apply", "build_payload", "sanitize", "DISCLAIMER"]
+__all__ = ["rank_with_claude", "validate_and_apply", "build_payload", "sanitize",
+           "test_connection", "DISCLAIMER"]

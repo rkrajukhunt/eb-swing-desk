@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime
 
 from .base import BrokerAdapter, BrokerError, BrokerStatus, Candle, Instrument
 from ..config import env

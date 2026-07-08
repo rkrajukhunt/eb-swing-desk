@@ -11,7 +11,7 @@ from ..config import DISCLAIMER
 from ..database import db_session
 from ..engine.scanner import get_current_regime, latest_scan, run_scan
 from ..engine.strategies import STRATEGY_LABELS
-from ..models import ScanRun, Signal
+from ..models import Signal
 
 router = APIRouter(prefix="/api", tags=["scan"])
 

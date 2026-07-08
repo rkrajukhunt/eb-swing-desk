@@ -8,3 +8,7 @@ node_modules/
 frontend/dist/
 .pytest_cache/
 .DS_Store
+# smartapi-python's logzero logger writes full request bodies here —
+# including clientcode, MPIN, TOTP and X-PrivateKey. Never commit.
+logs/
+backend/logs/

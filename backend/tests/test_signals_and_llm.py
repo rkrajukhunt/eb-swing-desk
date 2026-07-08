@@ -143,3 +143,61 @@ def test_llm_rationale_sanitized():
     validate_and_apply(data, sigs, 20)
     assert "<script>" not in sigs[0].llm_rationale
     assert "Solid trend." in sigs[0].llm_rationale
+
+
+# --- max_tokens budgeting --------------------------------------------------------
+def test_budget_fits_every_candidate_at_max_setting():
+    """The reply must never be truncated: the reservation has to exceed the real
+    need (~350 tok/candidate) even at the largest llm_max_candidates."""
+    from app.config import DEFAULT_SETTINGS
+    from app.llm.ranker import budget_for, MIN_TOKENS_PER_CANDIDATE, MAX_TOKENS_CEILING
+
+    for n in (1, 2, 5, 20, int(DEFAULT_SETTINGS["llm_max_candidates"])):
+        b = budget_for(n)
+        assert b >= MIN_TOKENS_PER_CANDIDATE * n, f"{n} candidates cannot fit in {b} tokens"
+        assert b <= MAX_TOKENS_CEILING
+
+
+def test_budget_scales_with_candidate_count():
+    from app.llm.ranker import budget_for
+    assert budget_for(1) < budget_for(2) < budget_for(20)
+
+
+def test_call_claude_retries_at_the_providers_ceiling(monkeypatch):
+    """A 402 naming a workable ceiling must be retried at that ceiling, not dropped."""
+    from app.llm import ranker, providers
+
+    payload = {"candidates": [{"id": "A"}, {"id": "B"}]}   # n=2 → wants 1312
+    calls = []
+
+    def fake_complete(settings, system, user, max_tokens, temperature=0.2):
+        calls.append(max_tokens)
+        if len(calls) == 1:
+            raise providers.LLMBudgetError("can only afford 1143", 1143)
+        return providers.Completion(text='{"ranked":[]}')
+
+    monkeypatch.setattr(ranker.providers, "complete", fake_complete)
+    monkeypatch.setattr(ranker, "get_settings", lambda: {"llm_model": "m"})
+    out = ranker._call_claude(payload, "m")
+    assert calls == [1312, 1143], calls
+    assert out == '{"ranked":[]}'
+
+
+def test_call_claude_gives_up_when_ceiling_too_small(monkeypatch):
+    """Below 300 tok/candidate the reply cannot hold n objects — don't pay for a
+    truncated response."""
+    from app.llm import ranker, providers
+
+    payload = {"candidates": [{"id": "A"}, {"id": "B"}]}   # floor = 600
+    calls = []
+
+    def fake_complete(settings, system, user, max_tokens, temperature=0.2):
+        calls.append(max_tokens)
+        raise providers.LLMBudgetError("can only afford 100", 100)
+
+    monkeypatch.setattr(ranker.providers, "complete", fake_complete)
+    monkeypatch.setattr(ranker, "get_settings", lambda: {"llm_model": "m"})
+    import pytest
+    with pytest.raises(providers.LLMBudgetError):
+        ranker._call_claude(payload, "m")
+    assert calls == [1312], "must not retry at an unusable ceiling"

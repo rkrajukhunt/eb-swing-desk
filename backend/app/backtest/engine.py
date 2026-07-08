@@ -21,7 +21,6 @@ import pandas as pd
 
 from ..engine.indicators import compute_indicators
 from ..engine.liquidity import liquidity_check
-from ..engine.regime import classify_regime
 from ..engine.signals import apply_costs, build_levels, position_size
 from ..engine.strategies import evaluate_strategies
 from ..services import market_data

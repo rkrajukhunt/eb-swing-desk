@@ -7,14 +7,39 @@ export default function Settings({ onSaved }: { onSaved: () => void }) {
   const [err, setErr] = useState<string | null>(null);
   const [authMsg, setAuthMsg] = useState<string | null>(null);
   const [requestToken, setRequestToken] = useState("");
+  const [providers, setProviders] = useState<any[]>([]);
+  const [llmMsg, setLlmMsg] = useState<string | null>(null);
+  const [llmTesting, setLlmTesting] = useState(false);
 
   useEffect(() => {
     api.get<any>("/api/settings").then(setS).catch((e) => setErr(String(e.message || e)));
+    api.get<any>("/api/meta").then((m) => setProviders(m.llm_providers ?? [])).catch(() => {});
   }, []);
 
   if (!s) return <div className="panel muted">Loading…</div>;
 
   const set = (key: string, value: any) => setS({ ...s, [key]: value });
+
+  // Switching provider carries the model with it — an Anthropic id sent to
+  // OpenRouter (or vice-versa) 404s, so default to that provider's first preset.
+  const onProvider = (id: string) => {
+    const preset = providers.find((p) => p.id === id)?.models?.[0];
+    setLlmMsg(null);
+    setS({ ...s, llm_provider: id, ...(preset ? { llm_model: preset } : {}) });
+  };
+
+  const testLlm = async () => {
+    setLlmTesting(true);
+    setLlmMsg(null);
+    try {
+      const r = await api.post<any>("/api/llm/test", {});
+      setLlmMsg(`${r.ok ? "✓" : "✗"} ${r.provider} · ${r.model} · ${r.key_env} — ${r.detail}`);
+    } catch (e: any) {
+      setLlmMsg(`✗ ${e.message || e}`);
+    } finally {
+      setLlmTesting(false);
+    }
+  };
   const setStrat = (name: string, key: string, value: any) =>
     setS({ ...s, strategies: { ...s.strategies, [name]: { ...s.strategies[name], [key]: value } } });
 
@@ -119,10 +144,41 @@ export default function Settings({ onSaved }: { onSaved: () => void }) {
           <input type="text" value={s.scan_schedule_cron} onChange={(e) => set("scan_schedule_cron", e.target.value)} />
         </label>
         {num("auto_exit_poll_seconds", "Auto-exit poll (s)", 5)}
+      </div>
+
+      <h4 className="section">LLM re-ranking</h4>
+      <div className="toolbar">
         <div className="checkbox-row">
           <input id="llm" type="checkbox" checked={s.llm_enabled} onChange={(e) => set("llm_enabled", e.target.checked)} />
-          <label htmlFor="llm">LLM re-ranking (Claude — additive only, deterministic fallback)</label>
+          <label htmlFor="llm">Enabled (additive only — deterministic fallback)</label>
         </div>
+        <label className="field">Provider
+          <select value={s.llm_provider} onChange={(e) => onProvider(e.target.value)}>
+            {providers.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+          </select>
+        </label>
+        <label className="field">Model
+          <input type="text" list="llm-models" value={s.llm_model}
+                 onChange={(e) => set("llm_model", e.target.value)} />
+          <datalist id="llm-models">
+            {(providers.find((p) => p.id === s.llm_provider)?.models ?? []).map((m: string) => (
+              <option key={m} value={m} />
+            ))}
+          </datalist>
+        </label>
+        {num("llm_max_candidates", "Max candidates", 1)}
+        <button className="secondary" onClick={testLlm} disabled={llmTesting}>
+          {llmTesting ? "Testing…" : "Test LLM connection"}
+        </button>
+      </div>
+      {llmMsg && <div className="muted" style={{ marginBottom: 10 }}>{llmMsg}</div>}
+      <div className="muted" style={{ fontSize: 12, marginBottom: 16 }}>
+        Each provider uses its own official SDK (
+        <code>{providers.find((p) => p.id === s.llm_provider)?.sdk ?? "anthropic"}</code>) and reads{" "}
+        <code>{providers.find((p) => p.id === s.llm_provider)?.key_env ?? "ANTHROPIC_API_KEY"}</code>{" "}
+        from server-side <code>.env</code> — keys are never exposed to this UI.
+        Model ids are provider-specific: Anthropic uses <code>claude-sonnet-4-6</code>,
+        OpenRouter uses <code>anthropic/claude-sonnet-4.6</code>. Save, then Test.
       </div>
 
       <h4 className="section">Strategy presets</h4>

@@ -9,9 +9,9 @@ from sqlalchemy import select
 from ..adapters.base import BrokerError
 from ..adapters.factory import active_adapter, get_adapter
 from ..backtest.engine import run_backtest
-from ..config import DISCLAIMER
+from ..config import DISCLAIMER, LLM_PROVIDERS
 from ..database import db_session
-from ..engine.indicators import compute_indicators, ema
+from ..engine.indicators import ema
 from ..models import Signal, WatchlistItem
 from ..services import market_data
 from ..services.settings_store import get_settings, update_settings
@@ -38,8 +38,26 @@ def meta():
         "universes": ["NIFTY50", "NIFTY100", "NIFTY500"],
         "strategies": list(s["strategies"].keys()),
         "brokers": ["mock", "angel_one", "zerodha"],
+        # No secrets here — just ids, labels and model presets for the Settings UI.
+        "llm_providers": [
+            {"id": pid, "label": spec["label"], "models": spec["models"],
+             "sdk": spec["sdk"], "key_prefix": spec["key_prefix"],
+             "key_env": spec["key_env"].upper()}
+            for pid, spec in LLM_PROVIDERS.items()
+        ],
         "disclaimer": DISCLAIMER,
     }
+
+
+# --- LLM ----------------------------------------------------------------------
+@router.post("/llm/test")
+def llm_test():
+    """Round-trip the configured provider/model. The scan path degrades silently
+    to deterministic ordering on any LLM failure, so this is the only way to see
+    whether the key, endpoint and model id actually work."""
+    from ..llm.ranker import test_connection
+
+    return test_connection()
 
 
 # --- Broker -----------------------------------------------------------------

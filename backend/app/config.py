@@ -20,7 +20,10 @@ class EnvSettings(BaseSettings):
     port: int = 8000
     cors_origins: str = "http://localhost:5173"
 
-    anthropic_api_key: str = ""
+    # --- LLM providers (each speaks its own official SDK; no base_url shims) ---
+    # Which key is read depends on the `llm_provider` setting; see LLM_PROVIDERS.
+    anthropic_api_key: str = ""       # sk-ant-...   → llm_provider = "anthropic"
+    openrouter_api_key: str = ""      # sk-or-v1-... → llm_provider = "openrouter"
 
     angel_api_key: str = ""
     angel_client_code: str = ""
@@ -33,6 +36,42 @@ class EnvSettings(BaseSettings):
 
 
 env = EnvSettings()
+
+
+# ---------------------------------------------------------------------------
+# LLM providers. Each is reached through its own official SDK — `anthropic` via
+# the Anthropic Messages API, `openrouter` via the `openrouter` package. `sdk`
+# names the pip package; `key_env` names the EnvSettings field holding its key.
+#
+# NOTE: model ids are NOT portable across providers. Anthropic uses dashes
+# ("claude-sonnet-4-6"); OpenRouter namespaces + dots ("anthropic/claude-sonnet-4.6").
+# ---------------------------------------------------------------------------
+LLM_PROVIDERS: dict = {
+    "anthropic": {
+        "label": "Anthropic (Messages API)",
+        "sdk": "anthropic",
+        "key_env": "anthropic_api_key",
+        "key_prefix": "sk-ant-",
+        "models": [
+            "claude-opus-4-8",
+            "claude-sonnet-5",
+            "claude-sonnet-4-6",
+            "claude-haiku-4-5",
+        ],
+    },
+    "openrouter": {
+        "label": "OpenRouter (official SDK)",
+        "sdk": "openrouter",
+        "key_env": "openrouter_api_key",
+        "key_prefix": "sk-or-",
+        "models": [
+            "anthropic/claude-opus-4.8",
+            "anthropic/claude-sonnet-5",
+            "anthropic/claude-sonnet-4.6",
+            "anthropic/claude-haiku-4.5",
+        ],
+    },
+}
 
 
 # ---------------------------------------------------------------------------
@@ -67,7 +106,8 @@ DEFAULT_SETTINGS: dict = {
     "scan_schedule_cron": "45 15 * * 1-5",   # 15:45 IST Mon-Fri (post close)
     # --- LLM layer ---
     "llm_enabled": True,
-    "llm_model": "claude-sonnet-4-6",
+    "llm_provider": "anthropic",          # anthropic | openrouter (see LLM_PROVIDERS)
+    "llm_model": "claude-sonnet-4-6",     # must match the provider's id format
     "llm_max_candidates": 20,
     # --- Backtest ---
     "backtest_years": 3,

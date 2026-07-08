@@ -1,0 +1,14 @@
+{
+  "include": ["backend/app", "backend/tests"],
+  "exclude": ["**/__pycache__", "**/.venv", "**/node_modules", "backend/logs"],
+
+  "venvPath": "backend",
+  "venv": ".venv",
+  "extraPaths": ["backend"],
+
+  "pythonVersion": "3.12",
+
+  "typeCheckingMode": "off",
+  "reportMissingImports": "error",
+  "reportMissingModuleSource": "none"
+}

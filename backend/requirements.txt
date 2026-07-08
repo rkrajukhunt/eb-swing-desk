@@ -6,7 +6,8 @@ pydantic>=2.7
 pydantic-settings>=2.3
 pandas>=2.2
 numpy>=1.26
-anthropic>=0.40
+anthropic>=0.40           # llm_provider = "anthropic"
+openrouter>=0.11          # llm_provider = "openrouter" (official SDK)
 apscheduler>=3.10
 httpx>=0.27
 python-dotenv>=1.0

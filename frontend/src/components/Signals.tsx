@@ -16,6 +16,7 @@ export default function Signals({
 }) {
   const [strategy, setStrategy] = useState("all");
   const [filter, setFilter] = useState("");
+  const [minScore, setMinScore] = useState(50);   // hide low-conviction setups
   const [sortKey, setSortKey] = useState<SortKey>("llm");
   const [sortAsc, setSortAsc] = useState(false);
   const [buySignal, setBuySignal] = useState<SignalRow | null>(null);
@@ -23,6 +24,7 @@ export default function Signals({
 
   const rows = useMemo(() => {
     let out = scan?.signals ?? [];
+    out = out.filter((s) => s.composite_score >= minScore);
     if (filter) {
       const f = filter.toUpperCase();
       out = out.filter((s) => s.symbol.includes(f) || s.strategy_label.toUpperCase().includes(f));
@@ -49,7 +51,7 @@ export default function Signals({
       out.reverse();
     }
     return out;
-  }, [scan, filter, sortKey, sortAsc]);
+  }, [scan, filter, minScore, sortKey, sortAsc]);
 
   const th = (label: string, key: SortKey, cls = "") => (
     <th className={cls} onClick={() => (sortKey === key ? setSortAsc(!sortAsc) : (setSortKey(key), setSortAsc(false)))}>
@@ -101,6 +103,11 @@ export default function Signals({
         <label className="field">
           Filter
           <input type="text" placeholder="symbol / strategy" value={filter} onChange={(e) => setFilter(e.target.value)} />
+        </label>
+        <label className="field">
+          Min score
+          <input type="number" min={0} max={100} step={5} style={{ width: 72 }}
+                 value={minScore} onChange={(e) => setMinScore(Number(e.target.value) || 0)} />
         </label>
         {scan?.run && (
           <div className="muted" style={{ marginLeft: "auto", fontSize: 12 }}>
@@ -170,7 +177,11 @@ export default function Signals({
             ))}
             {rows.length === 0 && (
               <tr><td colSpan={16} className="left muted">
-                {scan?.run ? "No signals in the latest scan — regime gate, liquidity guards or strategy filters rejected everything." : "No scan yet. Hit Run Scan."}
+                {!scan?.run
+                  ? "No scan yet. Hit Run Scan."
+                  : (scan.signals.length > 0
+                      ? `All ${scan.signals.length} signal(s) are below the min-score filter (${minScore}) or don't match the text filter — lower "Min score" to see them.`
+                      : "No signals in the latest scan — regime gate, liquidity guards or strategy filters rejected everything.")}
               </td></tr>
             )}
           </tbody>

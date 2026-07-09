@@ -7,19 +7,56 @@ export function MetricCards({ m }: { m: Metrics }) {
   const card = (k: string, v: string, cls = "") => (
     <div className="card" key={k}><div className="k">{k}</div><div className={`v ${cls}`}>{v}</div></div>
   );
+  const sgn = (x: number | null | undefined) => ((x ?? 0) >= 0 ? "pos" : "neg");
+  const bmRet = m.benchmark?.return_pct;
+  const alpha = m.total_return_pct != null && bmRet != null ? m.total_return_pct - bmRet : null;
   return (
-    <div className="cards">
-      {card("Trades", String(m.trades))}
-      {card("Win rate", m.win_rate != null ? `${m.win_rate}%` : "—")}
-      {card("Avg win", m.avg_win != null ? `₹${fmt(m.avg_win)}` : "—", "pos")}
-      {card("Avg loss", m.avg_loss != null ? `₹${fmt(m.avg_loss)}` : "—", "neg")}
-      {card("Expectancy", m.expectancy_r != null ? `${m.expectancy_r} R` : "—", (m.expectancy_r ?? 0) >= 0 ? "pos" : "neg")}
-      {card("Profit factor", m.profit_factor != null ? String(m.profit_factor) : "—")}
-      {card("Max drawdown", m.max_drawdown_pct != null ? `${m.max_drawdown_pct}%` : "—", "neg")}
-      {card("Total return", m.total_return_pct != null ? `${m.total_return_pct}%` : "—", (m.total_return_pct ?? 0) >= 0 ? "pos" : "neg")}
-      {card("Net P&L", `₹${fmt(m.net_pnl)}`, m.net_pnl >= 0 ? "pos" : "neg")}
-      {card("Avg holding", m.avg_holding_days != null ? `${m.avg_holding_days} d` : "—")}
-    </div>
+    <>
+      <div className="cards">
+        {card("Trades", String(m.trades))}
+        {card("Win rate", m.win_rate != null ? `${m.win_rate}%` : "—")}
+        {card("Total return", m.total_return_pct != null ? `${m.total_return_pct}%` : "—", sgn(m.total_return_pct))}
+        {card("CAGR", m.cagr_pct != null ? `${m.cagr_pct}%` : "—", sgn(m.cagr_pct))}
+        {card("Sharpe", m.sharpe != null ? String(m.sharpe) : "—", sgn(m.sharpe))}
+        {card("Sortino", m.sortino != null ? String(m.sortino) : "—", sgn(m.sortino))}
+        {card("Max drawdown", m.max_drawdown_pct != null ? `${m.max_drawdown_pct}%` : "—", "neg")}
+        {card("Profit factor", m.profit_factor != null ? String(m.profit_factor) : "—", (m.profit_factor ?? 0) >= 1 ? "pos" : "neg")}
+        {card("Expectancy", m.expectancy_r != null ? `${m.expectancy_r} R` : "—", sgn(m.expectancy_r))}
+        {card("Avg holding", m.avg_holding_days != null ? `${m.avg_holding_days} d` : "—")}
+        {card("Net P&L", `₹${fmt(m.net_pnl)}`, sgn(m.net_pnl))}
+        {m.deflated_sharpe != null &&
+          card("Deflated Sharpe", `${(m.deflated_sharpe * 100).toFixed(0)}%`,
+               m.deflated_sharpe >= 0.95 ? "pos" : "neg")}
+      </div>
+
+      {(bmRet != null || alpha != null) && (
+        <div className="muted" style={{ margin: "8px 0 4px", fontSize: 13 }}>
+          {bmRet != null && <>NIFTY buy-and-hold, same window: <b>{bmRet}%</b>
+            {m.benchmark?.sharpe != null && <> (Sharpe {m.benchmark.sharpe})</>}. </>}
+          {alpha != null && (
+            <span className={alpha >= 0 ? "pos" : "neg"}>
+              Strategy {alpha >= 0 ? "beat" : "lagged"} the index by {Math.abs(alpha).toFixed(1)} pts.
+            </span>
+          )}
+          {m.deflated_sharpe != null && m.deflated_sharpe < 0.95 &&
+            <span className="neg"> &nbsp;Deflated Sharpe &lt; 95% — not statistically convincing yet.</span>}
+        </div>
+      )}
+
+      {m.by_year && m.by_year.length > 0 && (
+        <table className="tbl" style={{ marginTop: 6, fontSize: 13 }}>
+          <thead><tr><th>Year</th><th>Trades</th><th>Win %</th><th>P&amp;L ₹</th></tr></thead>
+          <tbody>
+            {m.by_year.map((y) => (
+              <tr key={y.year}>
+                <td>{y.year}</td><td>{y.trades}</td><td>{y.win_rate}%</td>
+                <td className={y.pnl >= 0 ? "pos" : "neg"}>₹{fmt(y.pnl)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </>
   );
 }
 

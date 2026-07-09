@@ -112,6 +112,7 @@ DEFAULT_SETTINGS: dict = {
     # --- Backtest ---
     "backtest_years": 3,
     "backtest_max_holding_days": 40,
+    "backtest_max_positions": 10,          # max concurrent portfolio positions (shared capital)
     # --- Option selling (NIFTY weekly income module — separate from swing) ---
     "options": {
         "enabled": True,

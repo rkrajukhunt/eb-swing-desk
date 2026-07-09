@@ -91,6 +91,12 @@ export interface Metrics {
   total_return_pct: number | null;
   net_pnl: number;
   avg_holding_days: number | null;
+  cagr_pct?: number | null;
+  sharpe?: number | null;
+  sortino?: number | null;
+  deflated_sharpe?: number | null;
+  benchmark?: { return_pct: number | null; cagr_pct: number | null; sharpe: number | null } | null;
+  by_year?: { year: string; trades: number; win_rate: number; pnl: number }[];
   equity_curve: { t: string | null; equity: number }[];
 }
 
@@ -98,6 +104,8 @@ export interface BacktestResult {
   strategy: string;
   years: number;
   symbols_tested: number;
+  max_positions?: number;
+  n_trials?: number;
   overall: Metrics;
   by_strategy: Record<string, Metrics>;
   trades: any[];

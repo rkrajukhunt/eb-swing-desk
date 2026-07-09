@@ -44,13 +44,39 @@ class AngelOneAdapter(BrokerAdapter):
             if not data or not data.get("status"):
                 raise BrokerError(f"Angel One login failed: {data and data.get('message')}")
             self._smart = smart
-            self._detail = "Authenticated via TOTP"
             self._load_instruments()
+            # Login is lenient about the API key (it checks client+MPIN+TOTP), but
+            # the data endpoints validate it strictly. A key that logs in can still
+            # be rejected by getCandleData/getMarketData with "Invalid API Key" —
+            # e.g. when ANGEL_API_KEY holds the client code or a Publisher-only key.
+            # Probe once so the button reports real usability, not just login.
+            self._detail = self._probe_data_access()
             return self.status()
         except BrokerError:
             raise
         except Exception as e:  # network / SDK errors
             raise BrokerError(f"Angel One auth error: {e}") from e
+
+    def _probe_data_access(self) -> str:
+        """One cheap market-data call to confirm the API key has data scope."""
+        try:
+            token = self._instruments.get("NIFTY 50")
+            token = token.token if token else next(
+                (i.token for i in self._instruments.values() if i.token), "")
+            if not token:
+                return "Authenticated via TOTP (instrument master empty)"
+            resp = self._smart.ltpData("NSE", "RELIANCE-EQ", "2885")
+            if resp and resp.get("status"):
+                return "Authenticated via TOTP — market data OK"
+            msg = (resp or {}).get("message", "unknown")
+            log.warning("Angel data-access probe failed: %s "
+                        "(ANGEL_API_KEY may be your client code or a non-market-data key)", msg)
+            return (f"Login OK but data endpoints reject the key: '{msg}'. "
+                    f"Check ANGEL_API_KEY — it must be a Market-Feeds/Trading API key, "
+                    f"not your client code.")
+        except Exception as e:                       # noqa: BLE001
+            log.warning("Angel data-access probe error: %s", e)
+            return f"Authenticated via TOTP — data probe error: {str(e)[:80]}"
 
     def status(self) -> BrokerStatus:
         return BrokerStatus(name=self.name, authenticated=self._smart is not None, detail=self._detail)

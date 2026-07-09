@@ -186,4 +186,28 @@ def universe():
 
 @router.get("/health")
 def health():
-    return {"ok": True}
+    from sqlalchemy import text
+    db_status = "ok"
+    db_error = None
+    try:
+        with db_session() as s:
+            s.execute(text("SELECT 1"))
+    except Exception as e:
+        db_status = "error"
+        db_error = str(e)
+
+    if db_status != "ok":
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "status": "unhealthy",
+                "ok": False,
+                "database": {"status": "error", "error": db_error}
+            }
+        )
+
+    return {
+        "status": "ok",
+        "ok": True,
+        "database": {"status": "ok"}
+    }

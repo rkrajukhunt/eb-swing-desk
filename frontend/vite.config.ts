@@ -61,8 +61,8 @@ export default defineConfig(async ({ mode }) => {
           changeOrigin: true,
           secure: false,
           headers: customHeaders,
-          configure: (proxy, _options) => {
-            proxy.on("proxyReq", (proxyReq, _req, _res) => {
+          configure: (proxy: any, _options: any) => {
+            proxy.on("proxyReq", (proxyReq: any, _req: any, _res: any) => {
               try {
                 const targetHost = new URL(apiUrl).host;
                 proxyReq.setHeader("host", targetHost);
@@ -70,7 +70,7 @@ export default defineConfig(async ({ mode }) => {
                 // Ignore
               }
             });
-            proxy.on("error", (err, req, _res) => {
+            proxy.on("error", (err: any, req: any, _res: any) => {
               const reqUrl = (req as any)?.url || "";
               console.warn(
                 `[Proxy Warning] Failed to reach backend at ${apiUrl} for ${reqUrl}: ${err.message}. ` +

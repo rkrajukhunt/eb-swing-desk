@@ -83,7 +83,7 @@ export default function Settings({ onSaved }: { onSaved: () => void }) {
       <div className="toolbar">
         <label className="field">Active broker
           <select value={s.active_broker} onChange={(e) => set("active_broker", e.target.value)}>
-            <option value="mock">Mock (synthetic data, no keys needed)</option>
+            <option value="yahoo">Yahoo Finance (live NSE data, no keys)</option>
             <option value="angel_one">Angel One SmartAPI</option>
             <option value="zerodha">Zerodha Kite Connect</option>
           </select>

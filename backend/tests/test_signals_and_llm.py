@@ -201,3 +201,162 @@ def test_call_claude_gives_up_when_ceiling_too_small(monkeypatch):
     with pytest.raises(providers.LLMBudgetError):
         ranker._call_claude(payload, "m")
     assert calls == [1312], "must not retry at an unusable ceiling"
+
+
+def test_rank_with_claude_insufficient_credits_reduces_candidates(monkeypatch):
+    from app.llm import ranker, providers
+    from app.engine.regime import Regime
+
+    class MockSession:
+        def __init__(self):
+            self.saved = False
+        def execute(self, q):
+            class MockResult:
+                def scalars(self):
+                    return [
+                        FakeSignal("A", entry=100.0),
+                        FakeSignal("B", entry=100.0),
+                        FakeSignal("C", entry=100.0),
+                    ]
+            return MockResult()
+        def get(self, model, id):
+            class MockRun:
+                def __init__(self):
+                    self.llm_used = False
+            return MockRun()
+
+    class MockContext:
+        def __enter__(self):
+            return MockSession()
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            pass
+
+    monkeypatch.setattr(ranker, "get_settings", lambda: {
+        "llm_model": "m",
+        "llm_max_candidates": 20,
+    })
+    monkeypatch.setattr(ranker.providers, "preflight", lambda settings: "")
+    monkeypatch.setattr(ranker, "db_session", MockContext)
+
+    calls = []
+    def fake_call_claude(payload, model):
+        calls.append(len(payload["candidates"]))
+        if len(payload["candidates"]) == 3:
+            raise providers.LLMBudgetError("can only afford 500", 500)
+        return '{"ranked":[{"id":"A","rank":1,"conviction":"high","entry":100.0,"stop_loss":97.0,"target_2r":106.0,"target_3r":109.0,"risk_reward":2.0,"rationale":"ok","conflicts":[],"regime_note":"ok"}]}'
+
+    monkeypatch.setattr(ranker, "_call_claude", fake_call_claude)
+
+    regime = Regime(label="bullish", detail={})
+    ranker.rank_with_claude(1, regime)
+
+    # First call: 3 candidates. Insufficient tokens (need ~600, affordable 500).
+    # It should reduce batch size to 2 (500 // 200) and retry.
+    # Second call: 2 candidates.
+    # Third call: 1 candidate.
+    assert calls == [3, 2, 1]
+
+
+def test_rank_with_claude_budget_too_small_for_any_candidates(monkeypatch):
+    from app.llm import ranker, providers
+    from app.engine.regime import Regime
+
+    class MockSession:
+        def execute(self, q):
+            class MockResult:
+                def scalars(self):
+                    return [
+                        FakeSignal("A", entry=100.0),
+                        FakeSignal("B", entry=100.0),
+                    ]
+            return MockResult()
+
+    class MockContext:
+        def __enter__(self):
+            return MockSession()
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            pass
+
+    monkeypatch.setattr(ranker, "get_settings", lambda: {
+        "llm_model": "m",
+        "llm_max_candidates": 20,
+    })
+    monkeypatch.setattr(ranker.providers, "preflight", lambda settings: "")
+    monkeypatch.setattr(ranker, "db_session", MockContext)
+
+    calls = []
+    def fake_call_claude(payload, model):
+        calls.append(len(payload["candidates"]))
+        raise providers.LLMBudgetError("can only afford 100", 100)
+
+    monkeypatch.setattr(ranker, "_call_claude", fake_call_claude)
+
+    regime = Regime(label="bullish", detail={})
+    ranker.rank_with_claude(1, regime)
+
+    # First call: 2 candidates.
+    # e.affordable is 100. floor for 1 candidate is 200.
+    # So max_allowed is 100 // 200 = 0.
+    # Since max_allowed < 1, it should give up and log warning (not retry).
+    assert calls == [2]
+
+
+def test_rank_with_claude_batching_multiple_calls(monkeypatch):
+    from app.llm import ranker, providers
+    from app.engine.regime import Regime
+
+    class MockSession:
+        def __init__(self):
+            self.saved = False
+        def execute(self, q):
+            class MockResult:
+                def scalars(self):
+                    return [
+                        FakeSignal("A", entry=100.0),
+                        FakeSignal("B", entry=100.0),
+                        FakeSignal("C", entry=100.0),
+                    ]
+            return MockResult()
+        def get(self, model, id):
+            class MockRun:
+                def __init__(self):
+                    self.llm_used = False
+            return MockRun()
+
+    class MockContext:
+        def __enter__(self):
+            return MockSession()
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            pass
+
+    monkeypatch.setattr(ranker, "get_settings", lambda: {
+        "llm_model": "m",
+        "llm_max_candidates": 20,
+    })
+    monkeypatch.setattr(ranker.providers, "preflight", lambda settings: "")
+    monkeypatch.setattr(ranker, "db_session", MockContext)
+
+    calls = []
+    def fake_call_claude(payload, model):
+        cands = payload["candidates"]
+        calls.append([c["id"] for c in cands])
+        if len(cands) == 3:
+            raise providers.LLMBudgetError("can only afford 399", 399)
+        sym = cands[0]["id"]
+        return f'{{"ranked":[{{"id":"{sym}","rank":1,"conviction":"high","entry":100.0,"stop_loss":97.0,"target_2r":106.0,"target_3r":109.0,"risk_reward":2.0,"rationale":"ok","conflicts":[],"regime_note":"ok"}}]}}'
+
+    monkeypatch.setattr(ranker, "_call_claude", fake_call_claude)
+
+    regime = Regime(label="bullish", detail={})
+    ranker.rank_with_claude(1, regime)
+
+    # First call: A, B, C (fails with budget error)
+    # Second call: A (successful)
+    # Third call: B (successful)
+    # Fourth call: C (successful)
+    assert calls == [
+        ["A", "B", "C"],
+        ["A"],
+        ["B"],
+        ["C"],
+    ]

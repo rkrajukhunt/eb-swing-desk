@@ -2,8 +2,8 @@
 
 The auto-exit loop runs as a background asyncio task (started in main.py's
 lifespan). It batches LTP quotes to respect broker rate limits and only polls
-while the market is open (mock broker: always, so the system is testable on
-weekends).
+while the market is open (yahoo: always, since Yahoo serves quotes after close
+too, so the system is usable on weekends).
 """
 from __future__ import annotations
 
@@ -202,8 +202,8 @@ async def auto_exit_loop() -> None:
     while not _stop_event.is_set():
         settings = get_settings()
         try:
-            # Mock broker trades any time (dev); real brokers only in market hours
-            if settings["active_broker"] == "mock" or is_market_open():
+            # Yahoo delivers quotes anytime (incl. after close); brokers only in market hours
+            if settings["active_broker"] == "yahoo" or is_market_open():
                 await asyncio.to_thread(check_exits_once)
                 from ..options import paper as options_paper
 

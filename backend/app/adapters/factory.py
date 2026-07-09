@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from .base import BrokerAdapter
-from .mock import MockAdapter
+from .yahoo import YahooAdapter
 
 _instances: dict[str, BrokerAdapter] = {}
 
@@ -9,8 +9,8 @@ _instances: dict[str, BrokerAdapter] = {}
 def get_adapter(name: str) -> BrokerAdapter:
     """Singleton per broker so auth sessions persist across requests."""
     if name not in _instances:
-        if name == "mock":
-            _instances[name] = MockAdapter()
+        if name == "yahoo":
+            _instances[name] = YahooAdapter()
         elif name == "angel_one":
             from .angel_one import AngelOneAdapter
 

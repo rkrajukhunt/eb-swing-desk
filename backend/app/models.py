@@ -90,7 +90,7 @@ class PaperTrade(Base):
     symbol: Mapped[str] = mapped_column(String(32))
     strategy: Mapped[str] = mapped_column(String(32), default="manual")
     signal_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    broker_source: Mapped[str] = mapped_column(String(16), default="mock")
+    broker_source: Mapped[str] = mapped_column(String(16), default="yahoo")
     status: Mapped[str] = mapped_column(String(8), default="open")  # open | closed
     qty: Mapped[int] = mapped_column(Integer)
     entry_price: Mapped[float] = mapped_column(Float)   # live LTP at click
@@ -172,7 +172,7 @@ class OptionTrade(Base):
     costs: Mapped[float] = mapped_column(Float, default=0.0)
     pnl: Mapped[float | None] = mapped_column(Float, nullable=True)         # ₹ net of costs
     return_on_margin_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
-    broker_source: Mapped[str] = mapped_column(String(16), default="mock")
+    broker_source: Mapped[str] = mapped_column(String(16), default="yahoo")
 
 
 class WatchlistItem(Base):

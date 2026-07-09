@@ -1,4 +1,4 @@
-"""End-to-end smoke tests against a temp SQLite DB + mock broker."""
+"""End-to-end smoke tests against a temp SQLite DB + yahoo adapter."""
 import os
 import tempfile
 
@@ -27,7 +27,7 @@ def test_health_and_meta(client):
 
 def test_settings_roundtrip(client):
     s = client.get("/api/settings").json()
-    assert s["active_broker"] == "mock"
+    assert s["active_broker"] == "yahoo"
     upd = client.put("/api/settings", json={"universe": "NIFTY50", "risk_pct_per_trade": 2.0,
                                             "bogus_key": 1}).json()
     assert upd["universe"] == "NIFTY50"

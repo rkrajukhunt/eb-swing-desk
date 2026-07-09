@@ -37,7 +37,7 @@ def meta():
     return {
         "universes": ["NIFTY50", "NIFTY100", "NIFTY500"],
         "strategies": list(s["strategies"].keys()),
-        "brokers": ["mock", "angel_one", "zerodha"],
+        "brokers": ["yahoo", "angel_one", "zerodha"],
         # No secrets here — just ids, labels and model presets for the Settings UI.
         "llm_providers": [
             {"id": pid, "label": spec["label"], "models": spec["models"],

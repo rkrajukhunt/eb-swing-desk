@@ -121,7 +121,7 @@ TOKENS_OVERHEAD = 512
 MAX_TOKENS_CEILING = 16_384      # must exceed 512 + 400 × llm_max_candidates
 # Below this, the reply cannot possibly hold `n` complete objects — retrying at a
 # smaller budget would only buy a truncated (and billed) response.
-MIN_TOKENS_PER_CANDIDATE = 300
+MIN_TOKENS_PER_CANDIDATE = 200
 
 
 def budget_for(n_candidates: int) -> int:
@@ -145,7 +145,16 @@ def _call_claude(payload: dict, model: str) -> str:
             raise
         log.warning("LLM budget capped at %d tokens (wanted %d) — retrying at the cap",
                     e.affordable, max_tokens)
-        return providers.complete(settings, SYSTEM_PROMPT, user, e.affordable).text
+        
+        tight_user = user
+        if e.affordable < 400 * max(n, 1):
+            tight_user += (
+                "\n\nCRITICAL: You are running under extreme token budget constraints (max output tokens: %d). "
+                "You MUST keep the 'rationale' and 'regime_note' extremely brief (maximum of 5 words each) "
+                "and omit all conflicts to prevent output truncation. Write as little as possible."
+            ) % e.affordable
+
+        return providers.complete(settings, SYSTEM_PROMPT, tight_user, e.affordable).text
 
 
 def _parse_json(text: str) -> dict | None:
@@ -190,10 +199,10 @@ def validate_and_apply(data: dict, signals: list[Signal], max_candidates: int) -
         for f in PRICE_FIELDS:
             try:
                 echoed = float(item.get(f))
+                eng_val = engine_values[f]
+                if eng_val is None or abs(echoed - eng_val) > TOLERANCE:
+                    tampered.append(f)
             except (TypeError, ValueError):
-                tampered.append(f)
-                continue
-            if abs(echoed - engine_values[f]) > TOLERANCE:
                 tampered.append(f)
         if tampered:
             issues.append({"type": "price_tampering", "id": sym, "fields": tampered})
@@ -234,36 +243,64 @@ def rank_with_claude(scan_run_id: int, regime: Regime) -> None:
         if not signals:
             return
         max_c = int(settings["llm_max_candidates"])
-        payload = build_payload(signals, regime, max_c)
+        candidates = signals[:max_c]
 
-        data = None
-        for attempt in (1, 2):  # parse failure → retry once
-            try:
-                raw = _call_claude(payload, settings["llm_model"])
-            except providers.LLMBudgetError as e:
-                # _call_claude already retried at the provider's ceiling if that was
-                # workable. Retrying the whole call cannot help — the balance is the
-                # constraint, not the request. Stop instead of burning a second 402.
-                log.warning(
-                    "LLM ranking unavailable — insufficient credits for %d candidates "
-                    "(provider allows %s tokens, need ~%d). Add credits or lower "
-                    "llm_max_candidates. Falling back to composite_score order.",
-                    len(payload["candidates"]), e.affordable or "?",
-                    MIN_TOKENS_PER_CANDIDATE * len(payload["candidates"]))
-                return
-            except Exception as e:
-                log.warning("Claude call failed (attempt %d): %s", attempt, e)
+        all_ranked_data = []
+        i = 0
+        batch_size = len(candidates)
+
+        while i < len(candidates):
+            chunk = candidates[i:i + batch_size]
+            payload = build_payload(chunk, regime, len(chunk))
+
+            data = None
+            attempt = 1
+            budget_error = False
+            while attempt <= 2:
+                try:
+                    raw = _call_claude(payload, settings["llm_model"])
+                except providers.LLMBudgetError as e:
+                    if e.affordable and batch_size > 1:
+                        max_allowed = e.affordable // MIN_TOKENS_PER_CANDIDATE
+                        if 0 < max_allowed < batch_size:
+                            log.warning(
+                                "LLM credits insufficient for batch of %d candidates (need ~%d), but can afford %d. "
+                                "Reducing batch size to %d and retrying.",
+                                batch_size,
+                                MIN_TOKENS_PER_CANDIDATE * batch_size,
+                                e.affordable, max_allowed
+                            )
+                            batch_size = max_allowed
+                            budget_error = True
+                            break  # break out of attempt loop to re-slice chunk with new batch_size
+
+                    log.warning(
+                        "LLM ranking unavailable — insufficient credits for batch of %d candidates "
+                        "(provider allows %s tokens, need ~%d). Falling back to composite_score order.",
+                        len(payload["candidates"]), e.affordable or "?",
+                        MIN_TOKENS_PER_CANDIDATE * len(payload["candidates"]))
+                    return
+                except Exception as e:
+                    log.warning("Claude call failed (attempt %d): %s", attempt, e)
+                    attempt += 1
+                    continue
+                data = _parse_json(raw)
+                if data is not None:
+                    break
+                log.warning("Claude returned unparseable JSON (attempt %d). Raw response: %r", attempt, raw)
+                attempt += 1
+
+            if budget_error:
                 continue
-            data = _parse_json(raw)
-            if data is not None:
-                break
-            log.warning("Claude returned unparseable JSON (attempt %d)", attempt)
 
-        if data is None:
-            log.warning("LLM ranking unavailable — falling back to composite_score order")
-            return  # deterministic order remains; never crash
+            if data is None:
+                log.warning("LLM ranking unavailable — falling back to composite_score order")
+                return  # deterministic order remains; never crash
 
-        issues = validate_and_apply(data, signals, max_c)
+            all_ranked_data.extend(data.get("ranked", []))
+            i += batch_size
+
+        issues = validate_and_apply({"ranked": all_ranked_data}, signals, max_c)
         if issues:
             log.warning("LLM validation issues: %s", issues)
         run = s.get(ScanRun, scan_run_id)

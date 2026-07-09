@@ -1,4 +1,4 @@
-"""End-to-end options flow against the mock broker + temp SQLite DB."""
+"""End-to-end options flow against the yahoo adapter + temp SQLite DB."""
 import os
 import tempfile
 

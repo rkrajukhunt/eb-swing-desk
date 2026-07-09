@@ -1,7 +1,7 @@
 """Pluggable broker adapter interface.
 
 All market-data access goes through this ABC so the rest of the system is
-broker-agnostic. Implementations: AngelOneAdapter, ZerodhaAdapter, MockAdapter.
+broker-agnostic. Implementations: AngelOneAdapter, ZerodhaAdapter, YahooAdapter.
 """
 from __future__ import annotations
 

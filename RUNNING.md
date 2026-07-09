@@ -3,8 +3,9 @@
 Two processes: a **FastAPI backend** and a **Vite/React frontend**. The frontend proxies
 `/api/*` to the backend, so you must start the backend first.
 
-The app runs end-to-end with **zero credentials** — the mock broker generates deterministic
-synthetic OHLCV, so scans, charts, paper trading, auto-exits and backtests all work offline.
+The app runs end-to-end with **zero credentials** — the default **Yahoo Finance** adapter pulls
+live NSE prices (no API key), so scans, charts, paper trading, auto-exits and backtests just work.
+(Under `pytest` a deterministic synthetic generator is used so the suite stays offline.)
 
 ---
 
@@ -107,7 +108,7 @@ On a fresh database the regime banner reads `unknown` until the first scan popul
 OHLC cache — `classify_regime()` needs ≥ 210 NIFTY 50 candles. This is expected, not a bug.
 After the scan it flips to `bullish` / `neutral` / `bearish`.
 
-A full NIFTY100 scan takes ~30 s on the mock broker (cold cache).
+A full NIFTY100 scan takes ~30 s on a cold cache (fetching each symbol from Yahoo).
 
 Then: **Paper Buy** a signal → watch **Open Positions** update live → the server-side
 auto-exit engine closes it at SL/target.
@@ -248,33 +249,22 @@ Settings → broker `zerodha` → open the login URL from the top bar → log in
 
 ---
 
-## 7. Switching from mock to a real broker — wipe the cache first
+## 7. Switching to a real broker (Angel One / Zerodha)
 
-`ohlc_candles` is keyed on `(symbol, interval, ts)` with **no broker column**, and
-`refresh_symbol()` short-circuits when the newest cached candle is less than a day old:
-
-```python
-if (now - last).days < 1:
-    return 0        # fetches nothing
-```
-
-So if mock data is already cached with today's timestamp, switching to Angel One / Zerodha
-fetches **nothing** — your scan silently runs on synthetic prices while the UI reports
-`broker: angel_one`. Wipe before switching:
+The default `yahoo` broker needs no credentials and gives real NSE prices, so most users never
+switch. If you do want live intraday ticks / order-book depth from Angel One or Zerodha, note the
+OHLC cache is keyed on `(symbol, interval, ts)` with **no broker column**, and `refresh_symbol()`
+skips fetching when the newest cached candle is < 1 day old. So after switching brokers, wipe the
+cache once so the new source refetches cleanly:
 
 ```bash
 cd backend
-cp swingdesk.db swingdesk.db.bak            # optional
+cp swingdesk.db swingdesk.db.bak
 sqlite3 swingdesk.db "DELETE FROM ohlc_candles; DELETE FROM signals; DELETE FROM scan_runs;"
 ```
 
-**Also close any open mock paper trades.** Their entry prices are synthetic (e.g. PGHH @ ₹986
-when the real price is ~₹10,000). On the next poll the auto-exit engine sees the real LTP far
-above target and books a fabricated "Target Hit" profit into Performance.
-
-```bash
-sqlite3 swingdesk.db "DELETE FROM paper_trades WHERE broker_source='mock';"
-```
+Also close/delete any open paper trades entered against the previous source's prices, or the
+auto-exit engine will mark them against the new feed and book garbage P&L.
 
 ---
 

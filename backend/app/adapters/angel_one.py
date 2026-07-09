@@ -113,7 +113,7 @@ class AngelOneAdapter(BrokerAdapter):
             for row in (resp.get("data") or [])
         ]
         if interval == "week":
-            from .mock import _resample_weekly
+            from .yahoo import _resample_weekly
 
             candles = _resample_weekly(candles)
         time.sleep(0.35)  # respect ~3 req/s historical rate limit

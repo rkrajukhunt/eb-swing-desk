@@ -80,7 +80,7 @@ LLM_PROVIDERS: dict = {
 # strategy engine.
 # ---------------------------------------------------------------------------
 DEFAULT_SETTINGS: dict = {
-    "active_broker": "mock",              # mock | angel_one | zerodha
+    "active_broker": "yahoo",             # yahoo | angel_one | zerodha
     "universe": "NIFTY100",               # NIFTY50 | NIFTY100 | NIFTY500
     # --- Position sizing ---
     "capital": 500_000.0,                 # simulated capital (₹)

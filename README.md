@@ -18,7 +18,7 @@ carries a full formula audit trail (hover the strategy badge and score in the UI
 
 ```
 backend/app/
-  adapters/    BrokerAdapter ABC + AngelOne (SmartAPI/TOTP), Zerodha (Kite request-token), Mock
+  adapters/    BrokerAdapter ABC + Yahoo Finance (live NSE, no keys), AngelOne (SmartAPI/TOTP), Zerodha
                (equity LTP/OHLC + weekly option-chain quotes on all three)
   options/     NIFTY weekly option-selling module — fully separate from the swing engine:
                Black-Scholes pricing/IV/POP, expiry calendar, defined-risk structure
@@ -98,7 +98,7 @@ before any real money is involved. Verify `lot_size` (default 75) and
 
 ## Quick start (dev, zero credentials)
 
-The **mock broker** generates deterministic synthetic OHLCV so the entire system —
+The default **Yahoo Finance** adapter pulls live NSE prices with no API key, so the entire system —
 scans, charts, paper trading, auto-exits, backtests — works with no API keys.
 
 ```bash

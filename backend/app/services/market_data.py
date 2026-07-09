@@ -64,9 +64,13 @@ def refresh_symbol(adapter: BrokerAdapter, symbol: str) -> int:
     if existing.empty:
         from_dt = now - timedelta(days=LOOKBACK_DAYS)
     else:
+        # Always refetch a short recent tail so TODAY's (still-forming) candle and
+        # the last few sessions update on every scan. Skipping when a same-day
+        # candle already existed is what made "Run Scan" keep showing stale cached
+        # prices intraday. The overlap+upsert below dedupes, so re-fetching is safe;
+        # only the small tail is pulled (not the full history) — still rate-limit
+        # friendly.
         last = existing.index.max().to_pydatetime()
-        if (now - last).days < 1:
-            return 0
         from_dt = last - timedelta(days=5)  # small overlap; upsert dedupes
 
     candles = adapter.get_historical_ohlc(symbol, "day", from_dt, now)

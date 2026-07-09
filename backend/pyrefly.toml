@@ -1,0 +1,22 @@
+# Pyrefly config for the backend (the IDE's Python checker).
+#
+# Why `basic`: this is a gradually-typed codebase (few param annotations) whose
+# correctness is proven by the test suite, not by static types. Under the
+# `default` preset Pyrefly emits ~44 false positives — SQLAlchemy `Mapped[...|None]`
+# columns read right after assignment, and wrong third-party stubs (pandas
+# `ExtensionArray`, numpy `argmax`, smartapi, the OpenRouter `Stream` union).
+# `basic` is Pyrefly's own recommended preset for IDE/LSP users and reports the
+# genuine problems (undefined names, bad imports, syntax) without that noise.
+preset = "basic"
+
+project-includes = ["app", "tests"]
+project-excludes = ["**/__pycache__", "**/.venv", "logs"]
+
+# `.` so tests' `from app.config import ...` resolves the way conftest.py sets it
+# up at runtime (Pyrefly doesn't execute conftest).
+search-path = ["."]
+
+# Resolve third-party imports (anthropic, openrouter, pandas, fastapi, …) from
+# the project venv instead of the system interpreter.
+python-interpreter-path = ".venv/bin/python"
+python-version = "3.12"

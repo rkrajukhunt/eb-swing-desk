@@ -75,6 +75,8 @@ async def signal_generate(req: GenerateRequest):
             raise HTTPException(502, f"signal generation failed: {e}") from e
     with db_session() as s:
         sig = s.get(OptionSignal, sig_id)
+        if sig is None:                      # generator returned an id we can't reload
+            raise HTTPException(500, "signal was generated but could not be loaded")
         return {"signal": _signal_dict(sig), "disclaimer": DISCLAIMER}
 
 

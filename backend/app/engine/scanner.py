@@ -44,6 +44,21 @@ def _indicator_snapshot(row) -> dict:
     }
 
 
+def ensure_authenticated(adapter: BrokerAdapter) -> None:
+    """Log the broker in if it isn't already. The session lives in-memory, so a
+    backend restart or an expired token leaves a real broker unauthenticated —
+    a scan then fails on every symbol. Authenticate up front so 'Run Scan' works
+    without a separate 'Authenticate broker' click. No-op for yahoo (always on);
+    raises BrokerError with the real reason if login fails (bad key/MPIN/etc.)."""
+    try:
+        if adapter.status().authenticated:
+            return
+    except Exception:  # noqa: BLE001 — status() shouldn't throw, but never block on it
+        pass
+    log.info("broker '%s' not authenticated — logging in before scan", adapter.name)
+    adapter.authenticate()  # raises BrokerError on failure → surfaced to the API
+
+
 def get_current_regime(adapter: BrokerAdapter, refresh: bool = True) -> Regime:
     if refresh:
         try:
@@ -59,6 +74,7 @@ def run_scan(adapter: BrokerAdapter, strategy_filter: str = "all", refresh: bool
     symbols = get_universe_symbols(settings["universe"])
 
     if refresh:
+        ensure_authenticated(adapter)   # log in first so the scan can fetch data
         market_data.refresh_universe(adapter, symbols)
     regime = get_current_regime(adapter, refresh=refresh)
     index_daily = market_data.load_daily(INDEX_SYMBOL)

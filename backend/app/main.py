@@ -18,7 +18,12 @@ from .paper.engine import auto_exit_loop, stop_auto_exit_loop
 from .services.settings_store import get_settings
 from .utils.market_hours import IST, is_trading_day
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+import sys
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(name)s %(levelname)s %(message)s",
+    stream=sys.stdout
+)
 log = logging.getLogger("swingdesk")
 
 

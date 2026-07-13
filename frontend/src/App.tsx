@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { api } from "./api";
+import { api, withRetry } from "./api";
 import type { BrokerStatus, ScanLatest } from "./types";
 import Backtest from "./components/Backtest";
 import ClosedTrades from "./components/ClosedTrades";
@@ -29,12 +29,13 @@ export default function App() {
 
   const loadHeader = useCallback(async () => {
     try {
-      const [r, b] = await Promise.all([
+      const [r, b] = await withRetry(() => Promise.all([
         api.get<RegimeInfo>("/api/regime"),
         api.get<BrokerStatus>("/api/broker/status"),
-      ]);
+      ]));
       setRegime(r);
       setBroker(b);
+      setError(null);
     } catch (e: any) {
       setError(String(e.message || e));
     }
@@ -42,7 +43,8 @@ export default function App() {
 
   const loadScan = useCallback(async () => {
     try {
-      setScan(await api.get<ScanLatest>("/api/scan/latest"));
+      setScan(await withRetry(() => api.get<ScanLatest>("/api/scan/latest")));
+      setError(null);
     } catch (e: any) {
       setError(String(e.message || e));
     }

@@ -17,15 +17,22 @@ log = logging.getLogger(__name__)
 
 _INTERVAL_MAP = {"day": "ONE_DAY", "week": "ONE_DAY"}  # weekly is resampled from daily
 
-# getCandleData rate-limit handling (Angel: ~3 req/s, 180/min).
-_RATE_LIMIT_RETRIES = 4
-_RATE_BACKOFF_BASE = 1.0          # 1s, 2s, 4s, 8s
-_HISTORICAL_THROTTLE = 0.45       # base spacing between calls (~2.2/s, safely < 3/s)
+# getCandleData rate-limit handling (Angel: ~3 req/s, 180/min). Bursts trip it
+# well before the nominal ceiling, so we space calls out AND retry on rejection.
+_RATE_LIMIT_RETRIES = 6
+_RATE_BACKOFF_BASE = 1.0          # 1s, 2s, 4s, 8s, 16s, 32s (capped below)
+_RATE_BACKOFF_MAX = 20.0         # don't sleep longer than this on a single retry
+_HISTORICAL_MIN_INTERVAL = 0.6   # min gap between the START of consecutive calls (~1.6/s)
+
+# Angel signals the historical rate limiter with several different phrasings; a
+# matcher that only knows one of them silently drops symbols on the others.
+_RATE_LIMIT_MARKERS = ("exceeding access rate", "too many requests", "ab1021", "access denied")
 
 
 def _is_rate_limited(x) -> bool:
     """True if an exception or response message signals Angel's rate limiter."""
-    return "exceeding access rate" in str(x).lower()
+    s = str(x).lower()
+    return any(m in s for m in _RATE_LIMIT_MARKERS)
 
 
 class AngelOneAdapter(BrokerAdapter):
@@ -35,6 +42,17 @@ class AngelOneAdapter(BrokerAdapter):
         self._smart = None
         self._instruments: dict[str, Instrument] = {}
         self._detail = "Not authenticated"
+        self._next_call_at = 0.0   # monotonic clock floor for the next candle call
+
+    def _pace(self) -> None:
+        """Block until at least _HISTORICAL_MIN_INTERVAL has passed since the last
+        candle call started. Enforcing the gap BEFORE each call (rather than a
+        fixed sleep after) means retry backoffs and slow responses correctly push
+        the next call later instead of letting bursts through."""
+        now = time.monotonic()
+        if now < self._next_call_at:
+            time.sleep(self._next_call_at - now)
+        self._next_call_at = time.monotonic() + _HISTORICAL_MIN_INTERVAL
 
     # ------------------------------------------------------------------
     def authenticate(self, **kwargs) -> BrokerStatus:
@@ -134,24 +152,30 @@ class AngelOneAdapter(BrokerAdapter):
             "fromdate": from_dt.strftime("%Y-%m-%d 09:15"),
             "todate": to_dt.strftime("%Y-%m-%d 15:30"),
         }
-        # Angel throttles getCandleData (~3 req/s, 180/min). Under a full-universe
-        # scan the effective limit gets hit in bursts, so retry the rate-limit
-        # response with exponential backoff instead of dropping the symbol.
+        # Angel throttles getCandleData (~3 req/s, 180/min) and rejects bursts well
+        # under that with AB1021 ("Too many requests") or a raw "exceeding access
+        # rate" body. Space every call out and retry rejections with capped
+        # exponential backoff instead of dropping the symbol.
         resp = None
+        last_err: str | None = None
         for attempt in range(_RATE_LIMIT_RETRIES + 1):
+            self._pace()
             try:
                 resp = smart.getCandleData(params)
             except Exception as e:
                 if _is_rate_limited(e) and attempt < _RATE_LIMIT_RETRIES:
-                    time.sleep(_RATE_BACKOFF_BASE * (2 ** attempt))
+                    last_err = str(e)
+                    time.sleep(min(_RATE_BACKOFF_BASE * (2 ** attempt), _RATE_BACKOFF_MAX))
                     continue
                 raise BrokerError(f"Angel One candle fetch failed for {symbol}: {e}") from e
             if resp and _is_rate_limited(resp.get("message")) and attempt < _RATE_LIMIT_RETRIES:
-                time.sleep(_RATE_BACKOFF_BASE * (2 ** attempt))
+                last_err = str(resp.get("message"))
+                time.sleep(min(_RATE_BACKOFF_BASE * (2 ** attempt), _RATE_BACKOFF_MAX))
                 continue
             break
         if not resp or not resp.get("status"):
-            raise BrokerError(f"Angel One candle fetch failed for {symbol}: {resp and resp.get('message')}")
+            detail = (resp and resp.get("message")) or last_err or "no response"
+            raise BrokerError(f"Angel One candle fetch failed for {symbol}: {detail}")
         candles = [
             Candle(
                 ts=datetime.fromisoformat(row[0][:19]),
@@ -164,7 +188,6 @@ class AngelOneAdapter(BrokerAdapter):
             from .yahoo import _resample_weekly
 
             candles = _resample_weekly(candles)
-        time.sleep(_HISTORICAL_THROTTLE)  # base spacing to stay under the rate limit
         return candles
 
     def get_ltp(self, symbols: list[str]) -> dict[str, float]:
